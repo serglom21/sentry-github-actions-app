@@ -1,0 +1,55 @@
+name: Deploy
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build:
+    uses: consensys-vertical-apps/shared-services-workflows/.github/workflows/docker-build-and-validate.yml@v1.3.8
+    with:
+      github_advanced_security_enabled: false
+      aws_region: us-east-2
+
+  create-tag:
+    if: github.ref == 'refs/heads/main'
+    uses: consensys-vertical-apps/shared-services-workflows/.github/workflows/create-eph-tag.yml@v1.3.8
+
+  deploy-uat:
+    if: github.ref == 'refs/heads/main'
+    uses: consensys-vertical-apps/shared-services-workflows/.github/workflows/deploy.yml@v1.3.8
+    needs:
+      - build
+      - create-tag
+    with:
+      environment: uat
+      argocd_workload_repository: consensys-vertical-apps/va-mmc-apps-infra
+      workload_path: .
+      aws_role: arn:aws:iam::722264665990:role/ecr-github-mmc-uat-sentry-github-actions-app
+      aws_region: us-east-2
+      ecr_repository: mmc/uat/sentry-github-actions-app
+      image_tag: ${{ needs.create-tag.outputs.tag }}
+      token_exchange_url: ${{ vars.TOKEN_EXCHANGE_URL }}
+
+  deploy-prd:
+    if: github.ref == 'refs/heads/main'
+    uses: consensys-vertical-apps/shared-services-workflows/.github/workflows/deploy.yml@v1.3.8
+    needs:
+      - build
+      - create-tag
+      - deploy-uat
+    with:
+      environment: prd
+      argocd_workload_repository: consensys-vertical-apps/va-mmc-apps-infra
+      workload_path: .
+      aws_role: arn:aws:iam::921473456820:role/ecr-github-mmc-prd-sentry-github-actions-app
+      aws_region: us-east-2
+      ecr_repository: mmc/prd/sentry-github-actions-app
+      image_tag: ${{ needs.create-tag.outputs.tag }}
+      token_exchange_url: ${{ vars.TOKEN_EXCHANGE_URL }}
